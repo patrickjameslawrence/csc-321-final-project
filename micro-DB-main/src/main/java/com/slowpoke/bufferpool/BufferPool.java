@@ -35,9 +35,15 @@ public class BufferPool {
      * capacity: max # of pages per pool
      */
     private final int capacity;
+    
+    // keeps track of which page frame has a second chance
+    private HashMap<Integer, PageID> frames = new HashMap<Integer, PageID>();
+    private boolean[] secondChance;
+    private int victim, frame = 0;
 
     public BufferPool(DBConfig dbConfig) {
         this.capacity = dbConfig.getBufferPoolCapacity();
+        secondChance = new boolean[capacity];
         pool = new ConcurrentHashMap<>();
     }
 
@@ -63,9 +69,13 @@ public class BufferPool {
         if (page == null) {
             if (isFull()) {
                 // evict page
-                this.evictPages();
+                this.evictPages(pageID);
             }
             page = DataBase.getInstance().getDbTableById(pageID.getTableId()).getTableFile().readPageFromDisk(pageID);
+            frames.put(frame, pageID);
+            secondChance[frame] = true;
+            if (frame < capacity - 1)
+            	frame++;
             pool.put(pageID, page);
         }
         return page;
@@ -122,17 +132,43 @@ public class BufferPool {
      * TODO: Please Implement the Clock algorithm
      *
      */
-    private void evictPages() {
-        for (Map.Entry<PageID, Page> entry : pool.entrySet()) {
-            Page page = entry.getValue();
+    private void evictPages(PageID pageID) {
+    	if (frames.containsValue(pageID)) {
+    		
+    	} else {
+    		boolean replaced = false;
+    		while (replaced == false) {
+	    		for (int i = victim; i < capacity; i++) {
+	    			if (secondChance[i] == true) {
+	    				secondChance[i] = false;
+	    				continue;
+	    			} else {
+	    				replaced = true;
+	    				secondChance[i] = true;
+	    				System.out.printf("evict pages: %d\n", frames.get(i).getPageNo());
+	    				frames.remove(i);
+	    				frames.put(i, pageID);
+	    				break;
+	    			}
+	    		}
+    		}
+    		System.out.printf("Done\n");
+    	}
+    	
+//        for (Map.Entry<PageID, Page> entry : pool.entrySet()) {
+//            Page page = entry.getValue();
+//
+//            //flushPage(page);
+//            // remove page from buffer pool    
+//            pool.remove(page.getPageID());
+//            System.out.printf("evict pages: %d\n", page.getPageID().getPageNo());
+//        }
+//        System.out.printf("Done\n");
 
-            //flushPage(page);
-            // remove page from buffer pool
-            pool.remove(page.getPageID());
-            System.out.printf("evict pages: %d\n", page.getPageID().getPageNo());
-        }
-        System.out.printf("Done\n");
-
+    }
+    
+    public ConcurrentHashMap<PageID, Page> getPoolMap(){
+        return this.pool;
     }
 
     /**
